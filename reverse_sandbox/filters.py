@@ -1,8 +1,10 @@
 import json
+import os
 
-def read_filters(file_path):
+def read_filters(relative_file_path):
     temp = {}
     filters = {}
+    file_path = (os.path.dirname(__file__) or ".") + "/" + relative_file_path
     with open(file_path) as data:
         temp = json.load(data)
 
