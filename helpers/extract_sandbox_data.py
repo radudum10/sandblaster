@@ -5,9 +5,9 @@ import argparse
 import struct
 import lief
 
-CSTRING_SECTION = '__cstring'
-CONST_SECTION = '__const'
-DATA_SECTION = '__data'
+CSTRING_SECTION = "__cstring"
+CONST_SECTION = "__const"
+DATA_SECTION = "__data"
 
 
 def binary_get_word_size(binary: lief.MachO.Binary):
@@ -26,8 +26,10 @@ def binary_get_word_size(binary: lief.MachO.Binary):
         8: for 64bit MachO binaries
     """
 
-    assert (binary.header.magic in
-            [lief.MachO.MACHO_TYPES.MAGIC, lief.MachO.MACHO_TYPES.MAGIC_64])
+    assert binary.header.magic in [
+        lief.MachO.MACHO_TYPES.MAGIC,
+        lief.MachO.MACHO_TYPES.MAGIC_64,
+    ]
 
     return 4 if binary.header.magic == lief.MachO.MACHO_TYPES.MAGIC else 8
 
@@ -46,37 +48,37 @@ def unpack(bytes_list):
     """
 
     if len(bytes_list) == 4:
-        return struct.unpack('<I', bytes(bytes_list))[0]
+        return struct.unpack("<I", bytes(bytes_list))[0]
 
-    return struct.unpack('<Q', bytes(bytes_list()))[0]
+    return struct.unpack("<Q", bytes(bytes_list()))[0]
 
 
 def binary_get_string_from_address(binary: lief.MachO.Binary, vaddr: int):
     """Returns the string from a given MachO binary at a given virtual address.
 
-        Note: The virtual address must be in the CSTRING section.
+    Note: The virtual address must be in the CSTRING section.
 
-        Args:
-            binary: A sandbox profile in its binary form.
-            vaddr: An address.
+    Args:
+        binary: A sandbox profile in its binary form.
+        vaddr: An address.
 
-        Returns:
-            A string with the content stored at the given virtual address.
+    Returns:
+        A string with the content stored at the given virtual address.
 
-        Raises:
-            LIEF_ERR("Can't find a segment associated with the virtual address
-             0x{:x}", address);
+    Raises:
+        LIEF_ERR("Can't find a segment associated with the virtual address
+         0x{:x}", address);
     """
 
     section = get_section_from_segment(binary, "__TEXT", CSTRING_SECTION)
     if not is_vaddr_in_section(vaddr, section):
         return None
 
-    s = ''
+    s = ""
     while True:
         try:
             byte = binary.get_content_from_virtual_address(vaddr, 1)
-        except(Exception,):
+        except (Exception,):
             return None
 
         if byte is None or len(byte) == 0:
@@ -111,11 +113,12 @@ def untag_pointer(tagged_pointer):
         (the traditional way).
     """
 
-    return tagged_pointer & (0xffff << 48)
+    return tagged_pointer & (0xFFFF << 48)
 
 
-def get_section_from_segment(binary: lief.MachO.FatBinary,
-                             segment_name: str, section_name: str):
+def get_section_from_segment(
+    binary: lief.MachO.FatBinary, segment_name: str, section_name: str
+):
     """This can be used for retrieving const, cstring and data sections.
     Const section contains two tables: one with the names of the sandbox
     profile and one with the content of the sandbox profile.
@@ -165,15 +168,22 @@ def get_xref(binary: lief.MachO.Binary, vaddr: int):
     word_size = binary_get_word_size(binary)
 
     for sect in binary.sections:
-        content = sect.content[:len(sect.content) - len(sect.content) % word_size]
-        content = [unpack(content[i:i + word_size])
-                   for i in range(0, len(content), word_size)]
+        content = sect.content[: len(sect.content) - len(sect.content) % word_size]
+        content = [
+            unpack(content[i : i + word_size])
+            for i in range(0, len(content), word_size)
+        ]
 
         if word_size == 8:
             content = [untag_pointer(p) for p in content]
 
-        ans.extend((sect.virtual_address + i * word_size
-                    for i, p in enumerate(content) if p == vaddr))
+        ans.extend(
+            (
+                sect.virtual_address + i * word_size
+                for i, p in enumerate(content)
+                if p == vaddr
+            )
+        )
 
     return ans
 
@@ -190,7 +200,7 @@ def get_tables_section(binary: lief.MachO.Binary):
     """
 
     str_sect = get_section_from_segment(binary, "__TEXT", CSTRING_SECTION)
-    strs = str_sect.search_all('default\x00')
+    strs = str_sect.search_all("default\x00")
 
     if len(strs) > 0:
         vaddr_str = str_sect.virtual_address + strs[0]
@@ -198,14 +208,14 @@ def get_tables_section(binary: lief.MachO.Binary):
 
         if len(xref_vaddrs) > 0:
             sects = [binary.section_from_virtual_address(x) for x in xref_vaddrs]
-            sects = [s for s in sects if 'const' in s.name.lower()]
+            sects = [s for s in sects if "const" in s.name.lower()]
             assert len(sects) >= 1 and all([sects[0] == s for s in sects])
             return sects[0]
 
-    seg = binary.get_segment('__DATA')
+    seg = binary.get_segment("__DATA")
     if seg:
         sects = [s for s in seg.sections if s.name == CONST_SECTION]
-        assert (len(sects) <= 1)
+        assert len(sects) <= 1
 
         if len(sects) == 1:
             return sects[0]
@@ -214,8 +224,8 @@ def get_tables_section(binary: lief.MachO.Binary):
 
 
 def is_vaddr_in_section(vaddr, section):
-    """Checks if given virtual address is inside given section. 
-    
+    """Checks if given virtual address is inside given section.
+
     Args:
         vaddr: A virtual address.
         section: A section of the binary.
@@ -239,15 +249,14 @@ def unpack_pointer(addr_size, binary, vaddr):
         A pointer.
     """
 
-    ptr = unpack(
-        binary.get_content_from_virtual_address(vaddr, addr_size))
+    ptr = unpack(binary.get_content_from_virtual_address(vaddr, addr_size))
     if addr_size == 8:
         ptr = untag_pointer(ptr)
     return ptr
 
 
 def extract_data_tables_from_section(binary: lief.MachO.Binary, to_data, section):
-    """ Generic implementation of table search. A table is formed of adjacent
+    """Generic implementation of table search. A table is formed of adjacent
     pointers to data.
 
     Args:
@@ -305,9 +314,9 @@ def extract_string_tables(binary: lief.MachO.Binary):
         The string tables.
     """
 
-    return extract_data_tables_from_section(binary,
-                                            binary_get_string_from_address,
-                                            get_tables_section(binary))
+    return extract_data_tables_from_section(
+        binary, binary_get_string_from_address, get_tables_section(binary)
+    )
 
 
 def extract_separated_profiles(binary, string_tables):
@@ -326,8 +335,8 @@ def extract_separated_profiles(binary, string_tables):
     def get_profile_names():
         """Extracts the profile names.
 
-            Returns:
-                A list with the names of the sandbox profiles.
+        Returns:
+            A list with the names of the sandbox profiles.
         """
 
         def transform(v):
@@ -337,7 +346,7 @@ def extract_separated_profiles(binary, string_tables):
             ans = []
             tmp = []
             for val in v:
-                if val in ['default', '0123456789abcdef']:
+                if val in ["default", "0123456789abcdef"]:
                     ans.append(tmp)
                     tmp = []
                 else:
@@ -346,9 +355,8 @@ def extract_separated_profiles(binary, string_tables):
             return ans
 
         def get_sol(posible):
-            ans = [v for v in posible
-                   if 'com.apple.sandboxd' in v]
-            assert (len(ans) == 1)
+            ans = [v for v in posible if "com.apple.sandboxd" in v]
+            assert len(ans) == 1
             return ans[0]
 
         profile_names_v = [transform(v) for v in string_tables]
@@ -359,8 +367,8 @@ def extract_separated_profiles(binary, string_tables):
     def get_profile_contents():
         """Extracts the profile names.
 
-            Returns:
-                 The contents of the sandbox profiles.
+        Returns:
+             The contents of the sandbox profiles.
         """
 
         def get_profile_content(binary, vaddr):
@@ -384,24 +392,26 @@ def extract_separated_profiles(binary, string_tables):
                 return None
             return bytes(data)
 
-        contents_v = [v for v in
-                      extract_data_tables_from_section(binary,
-                                                       get_profile_content,
-                                                       get_tables_section(binary))
-                      if len(v) > 3]
+        contents_v = [
+            v
+            for v in extract_data_tables_from_section(
+                binary, get_profile_content, get_tables_section(binary)
+            )
+            if len(v) > 3
+        ]
 
-        assert (len(contents_v) == 1)
+        assert len(contents_v) == 1
         return contents_v[0]
 
     profile_names = get_profile_names()
     profile_contents = get_profile_contents()
 
-    assert (len(profile_names) == len(profile_contents))
+    assert len(profile_names) == len(profile_contents)
     return zip(profile_names, profile_contents)
 
 
 def extract_sbops(string_tables):
-    """ Extracts sandbox operations from a given MachO binary.
+    """Extracts sandbox operations from a given MachO binary.
     If the sandbox profiles are stored either in sandboxd or sandbox kernel
     extension, the operations are stored always in the kernel extension.
     The sandbox operations are stored similar to the separated sandbox profiles
@@ -420,13 +430,13 @@ def extract_sbops(string_tables):
 
         idxs = []
         for idx, val in enumerate(v):
-            if val == 'default':
+            if val == "default":
                 idxs.append(idx)
 
         return [v[idx:] for idx in idxs]
 
     def get_sol(possible):
-        assert (len(possible) >= 1)
+        assert len(possible) >= 1
 
         sol = []
         if len(possible) > 1:
@@ -438,7 +448,7 @@ def extract_sbops(string_tables):
         else:
             sol.append(possible[0][0])
             for c in possible[0][1:]:
-                if c in ['HOME', 'default']:
+                if c in ["HOME", "default"]:
                     break
                 sol.append(c)
 
@@ -454,14 +464,14 @@ def extract_sbops(string_tables):
 def get_ios_major_version(version: str):
     """Extracts the major iOS version from a given version.
 
-        Args:
-            version: A string with the 'full' version.
-        Returns:
-            An integer with the major iOS version.
+    Args:
+        version: A string with the 'full' version.
+    Returns:
+        An integer with the major iOS version.
 
     """
 
-    return int(version.split('.')[0])
+    return int(version.split(".")[0])
 
 
 def findall(searching, pattern):
@@ -482,7 +492,7 @@ def findall(searching, pattern):
 
 
 def check_regex(data: bytes, base_index: int, ios_version: int):
-    """ Checks if the regular expression (from sandbox profile) at offset
+    """Checks if the regular expression (from sandbox profile) at offset
     base_index from data is valid for newer versions of iOS(>=8).
 
     Args:
@@ -499,11 +509,11 @@ def check_regex(data: bytes, base_index: int, ios_version: int):
         return False
 
     if ios_version >= 13:
-        size = struct.unpack('<H', data[base_index: base_index + 0x2])[0]
-        version = struct.unpack('>I', data[base_index + 0x2: base_index + 0x6])[0]
+        size = struct.unpack("<H", data[base_index : base_index + 0x2])[0]
+        version = struct.unpack(">I", data[base_index + 0x2 : base_index + 0x6])[0]
     else:
-        size = struct.unpack('<I', data[base_index: base_index + 0x4])[0]
-        version = struct.unpack('>I', data[base_index + 0x4: base_index + 0x8])[0]
+        size = struct.unpack("<I", data[base_index : base_index + 0x4])[0]
+        version = struct.unpack(">I", data[base_index + 0x4 : base_index + 0x8])[0]
 
     if size > 0x1000 or size < 0x8 or base_index + size + 4 > len(data):
         return False
@@ -512,9 +522,9 @@ def check_regex(data: bytes, base_index: int, ios_version: int):
         return False
 
     if ios_version >= 13:
-        sub_size = struct.unpack('<H', data[base_index + 0x6: base_index + 0x8])[0]
+        sub_size = struct.unpack("<H", data[base_index + 0x6 : base_index + 0x8])[0]
     else:
-        sub_size = struct.unpack('<H', data[base_index + 0x8: base_index + 0xa])[0]
+        sub_size = struct.unpack("<H", data[base_index + 0x8 : base_index + 0xA])[0]
 
     return size == sub_size + 6
 
@@ -530,16 +540,19 @@ def unpack_for_newer_ios(base_index, count, data):
         The new base index and an offset.
     """
     re_offset = base_index + 12
-    op_nodes_count = struct.unpack('<H', data[base_index + 2:base_index + 4])[0]
-    sb_ops_count = struct.unpack('<H', data[base_index + 4:base_index + 6])[0]
-    sb_profiles_count = struct.unpack('<H', data[base_index + 6:base_index + 8])[0]
-    global_table_count = struct.unpack('<B', data[base_index + 10:base_index + 11])[0]
-    debug_table_count = struct.unpack('<B', data[base_index + 11:base_index + 12])[0]
+    op_nodes_count = struct.unpack("<H", data[base_index + 2 : base_index + 4])[0]
+    sb_ops_count = struct.unpack("<H", data[base_index + 4 : base_index + 6])[0]
+    sb_profiles_count = struct.unpack("<H", data[base_index + 6 : base_index + 8])[0]
+    global_table_count = struct.unpack("<B", data[base_index + 10 : base_index + 11])[0]
+    debug_table_count = struct.unpack("<B", data[base_index + 11 : base_index + 12])[0]
     # base_index will be now at the of op_nodes
-    base_index += 12 + (
-            count + global_table_count + debug_table_count) * 2 \
-                  + (2 + sb_ops_count) * 2 * sb_profiles_count \
-                  + op_nodes_count * 8 + 4
+    base_index += (
+        12
+        + (count + global_table_count + debug_table_count) * 2
+        + (2 + sb_ops_count) * 2 * sb_profiles_count
+        + op_nodes_count * 8
+        + 4
+    )
 
     return base_index, re_offset
 
@@ -561,10 +574,10 @@ def check_bundle(data: bytes, base_index: int, ios_version: int):
 
     if len(data) - base_index < 50:
         return False
-    re_offset, aux = struct.unpack('<2H', data[base_index + 2:base_index + 6])
+    re_offset, aux = struct.unpack("<2H", data[base_index + 2 : base_index + 6])
 
     if ios_version >= 13:
-        count = struct.unpack('<H', data[base_index + 8:base_index + 10])[0]
+        count = struct.unpack("<H", data[base_index + 8 : base_index + 10])[0]
         if count < 0x10:
             return False
     elif ios_version >= 12:
@@ -587,7 +600,7 @@ def check_bundle(data: bytes, base_index: int, ios_version: int):
             return False
 
     for off_index in range(re_offset, re_offset + 2 * count, 2):
-        index = struct.unpack('<H', data[off_index:off_index + 2])[0]
+        index = struct.unpack("<H", data[off_index : off_index + 2])[0]
         if index == 0:
             if off_index < re_offset + 2 * count - 4:
                 return False
@@ -608,10 +621,10 @@ def extract_bundle_profiles(binary: lief.MachO.Binary, ios_version: int):
 
     matches = []
     for section in binary.sections:
-        if section.name == '__text':
+        if section.name == "__text":
             continue
         content = bytes(section.content)
-        for index in findall(content, b'\x00\x80'):
+        for index in findall(content, b"\x00\x80"):
             if check_bundle(content, index, ios_version):
                 matches.append(content[index:])
     assert len(matches) == 1
@@ -620,7 +633,7 @@ def extract_bundle_profiles(binary: lief.MachO.Binary, ios_version: int):
 
 def main(args):
     if type(args.binary) == lief.MachO.FatBinary:
-        assert (args.binary.size == 1)
+        assert args.binary.size == 1
         binary = args.binary.at(0)
     else:
         binary = args.binary
@@ -630,13 +643,13 @@ def main(args):
 
     if args.sbops_file is not None:
         sbops = extract_sbops(string_tables)
-        sbops_str = '\n'.join(sbops)
-        if args.sbops_file == '-':
+        sbops_str = "\n".join(sbops)
+        if args.sbops_file == "-":
             print(sbops_str)
         else:
             try:
-                with open(args.sbops_file, 'w') as f:
-                    f.write(sbops_str + '\n')
+                with open(args.sbops_file, "w") as f:
+                    f.write(sbops_str + "\n")
             except IOError as e:
                 retcode = e.errno
                 print(e, file=sys.stderr)
@@ -646,7 +659,7 @@ def main(args):
             profiles = extract_separated_profiles(binary, string_tables)
             for name, content in profiles:
                 try:
-                    with open(args.sbs_dir + '/' + name + '.sb.bin', 'wb') as f:
+                    with open(args.sbs_dir + "/" + name + ".sb.bin", "wb") as f:
                         f.write(content)
                 except IOError as e:
                     retcode = e.errno
@@ -654,7 +667,7 @@ def main(args):
         else:
             content = extract_bundle_profiles(binary, args.version)
             try:
-                with open(args.sbs_dir + '/sandbox_bundle', 'wb') as f:
+                with open(args.sbs_dir + "/sandbox_bundle", "wb") as f:
                     f.write(content)
             except IOError as e:
                 retcode = e.errno
@@ -662,22 +675,41 @@ def main(args):
     exit(retcode)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description='Sandbox profiles and operations extraction tool(iOS <9)')
-    parser.add_argument('binary', metavar='BINARY', type=lief.MachO.parse,
-                        help='path to sandbox(seatbelt) kernel exenstion' +
-                             '(iOS 4-12) in order to extract sandbox operations OR ' +
-                             'path to sandboxd(iOS 5-8) / sandbox(seatbelt) kernel extension' +
-                             '(iOS 4 and 9-12) in order to extract sandbox profiles')
-    parser.add_argument('version', metavar='VERSION',
-                        type=get_ios_major_version, help='iOS version for given binary')
-    parser.add_argument('-o', '--output-sbops', dest='sbops_file', type=str,
-                        default=None,
-                        help='path to sandbox profile operations store file')
-    parser.add_argument('-O', '--output-profiles', dest='sbs_dir', type=str,
-                        default=None,
-                        help='path to directory in which sandbox profiles should be stored')
+        description="Sandbox profiles and operations extraction tool(iOS <9)"
+    )
+    parser.add_argument(
+        "binary",
+        metavar="BINARY",
+        type=lief.MachO.parse,
+        help="path to sandbox(seatbelt) kernel exenstion"
+        + "(iOS 4-12) in order to extract sandbox operations OR "
+        + "path to sandboxd(iOS 5-8) / sandbox(seatbelt) kernel extension"
+        + "(iOS 4 and 9-12) in order to extract sandbox profiles",
+    )
+    parser.add_argument(
+        "version",
+        metavar="VERSION",
+        type=get_ios_major_version,
+        help="iOS version for given binary",
+    )
+    parser.add_argument(
+        "-o",
+        "--output-sbops",
+        dest="sbops_file",
+        type=str,
+        default=None,
+        help="path to sandbox profile operations store file",
+    )
+    parser.add_argument(
+        "-O",
+        "--output-profiles",
+        dest="sbs_dir",
+        type=str,
+        default=None,
+        help="path to directory in which sandbox profiles should be stored",
+    )
 
     args = parser.parse_args()
     exit(main(args))
